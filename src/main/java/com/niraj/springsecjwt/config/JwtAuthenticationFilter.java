@@ -6,6 +6,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.lang.NonNull;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -15,6 +20,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
+    private final UserDetailsService userDetailsService;
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                     @NonNull HttpServletResponse response,
@@ -28,6 +34,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
         jwtToken = authHeader.substring(7);
-        userEmail = jwtService.extractUsername(jwtToken);//TODO: extract the userEmail from JWT Token
+        userEmail = jwtService.extractUsername(jwtToken);
+        if(userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            //if useremail is not there or user is not authenticated, then we get details from database.
+            UserDetails userDetails = this.userDetailsService.loadUserByUsername(userEmail);
+            if(jwtService.isTokenValid(jwtToken, userDetails)) {
+                // we check if token and userdetials are valid or not?
+                UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
+                        userDetails,
+                        null,
+                        userDetails.getAuthorities()
+                ); // generate new authtoken using UsernamePasswordAuthenticationToken
+                authToken.setDetails(
+                        new WebAuthenticationDetailsSource().buildDetails(request)
+                );// then set the details of authtoken with request.
+                SecurityContextHolder.getContext().setAuthentication(authToken);
+                //lastly update the Security context with the authtoken.
+            }
+        }
+        filterChain.doFilter(request, response);
     }
 }
